@@ -1,0 +1,16 @@
+# 凭据：任何情况下都不要提交
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+credentials.json
+
+# 系统 / 编辑器
+.DS_Store
+__pycache__/
+*.pyc
+
+# 本地部署脚本（含本机绝对路径，不发布）
+deploy.sh
+SKILL.md.orig.bak
