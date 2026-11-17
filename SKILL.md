@@ -71,6 +71,7 @@ The endpoint is OpenRouter's decisions route. Same request body as the TypeSafe 
 credentials and model namespace are OpenRouter's.
 
 ```bash
+# simplest form: scripts/jev.sh request.json  (resolves the key for you)
 curl https://openrouter.ai/api/alpha/decisions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
@@ -87,7 +88,14 @@ curl https://openrouter.ai/api/alpha/decisions \
   }'
 ```
 
-- Key: `OPENROUTER_API_KEY` (from OpenRouter, not a `TYPESAFE_API_KEY`). Keep it server-side.
+- Key: an OpenRouter key (never a `TYPESAFE_API_KEY`). Keep it server-side. Resolve it in this
+  order, because a non-interactive agent's shell never sources `~/.zshrc` or `~/.bashrc`:
+  1. `$OPENROUTER_API_KEY`
+  2. `$XDG_CONFIG_HOME/openrouter/key`, or `~/.config/openrouter/key` (mode 600), read as a single
+     line
+
+  `scripts/jev.sh <request.json>` does this for you and prints a clear error when neither exists;
+  prefer it over hand-written curl. A missing key is an error, not a "no".
 - Model: `typesafe/jev-1.14`, or pin the snapshot `typesafe/jev-1.14-20261014`, or use
   `~typesafe/jev-latest` (the `~` is required). `typesafe/jev-latest` without `~` does not exist,
   and `typesafe/jev-router` is a chat model, not a decisions model.

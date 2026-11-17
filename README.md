@@ -47,6 +47,8 @@ Jev 不做自由对话。你给它**事实（state）** 和**结构化问题（q
 git clone https://github.com/lucaswangdev/typesafe-ai-openrouter.git
 mkdir -p ~/.agents/skills/typesafe-ai-openrouter
 cp typesafe-ai-openrouter/SKILL.md typesafe-ai-openrouter/LICENSE ~/.agents/skills/typesafe-ai-openrouter/
+cp -r typesafe-ai-openrouter/scripts ~/.agents/skills/typesafe-ai-openrouter/
+chmod +x ~/.agents/skills/typesafe-ai-openrouter/scripts/jev.sh
 ```
 
 之后 agent 会在「调用 Jev / 设计 state 与问题 / 用类型化判断替代 prompt-and-parse」这类任务上自动加载它。
@@ -90,15 +92,71 @@ Jev 在 OpenRouter 上需要一个 OpenRouter API Key：
    echo "${OPENROUTER_API_KEY:0:8}..."
    ```
 
+### 非交互式 agent 读不到 rc 文件？
+
+`~/.zshrc` / `~/.bashrc` 只在对应的 shell **以交互模式启动时**才执行，而且它们只是「脚本文本」，
+不是系统环境变量：
+
+- `bash -c ...`（agent、CI、cron 里最常见的调用方式）不读任何 rc 文件；
+- `~/.zshrc` 只由 zsh 的交互式会话读取（容器里若没装 zsh，它永远不会生效）；
+- 登录 shell 读的是 `~/.profile` / `~/.bash_profile`，不是 `.bashrc`；
+- 服务进程（PM2 / systemd / docker）只继承**它自己启动时**的环境，fork 出的子进程不会再去读 rc。
+
+所以除了 `export`，本 skill 还支持**从文件读 Key**，这是给 agent / 服务的推荐方式：
+
+```bash
+mkdir -p ~/.config/openrouter && chmod 700 ~/.config/openrouter
+printf '%s\n' "sk-or-v1-你的key" > ~/.config/openrouter/key
+chmod 600 ~/.config/openrouter/key
+```
+
+Key 的解析顺序（`scripts/jev.sh` 已实现）：
+
+1. 环境变量 `OPENROUTER_API_KEY`
+2. `$XDG_CONFIG_HOME/openrouter/key`，或 `~/.config/openrouter/key`（单行，权限 600）
+
+两者都没有时脚本以退出码 2 报错，**不会**把「没有 key」当成某种答案继续跑。
+
+```bash
+# 不再依赖任何 shell rc，agent 里也能直接用
+scripts/jev.sh request.json
+```
+
+> 若用 PM2 / systemd 托管服务，把变量放进服务自身的环境（PM2 `ecosystem.config.cjs` 的 `env:`、
+> systemd `EnvironmentFile=`）才是根治；`pm2 restart <app> --update-env` 可把当前 shell 的环境注入
+> 已运行的进程。
+
 ### 安全约定
 
 - **本仓库不含任何 Key**，也不应包含：`.env`、`*.key`、硬编码字符串都已列入 `.gitignore`。
+- key 文件放在 `~/.config/openrouter/key`（`chmod 600`），本仓库不跟踪它。
 - 提交前自查：`git grep -nE "sk-or-v1-|ghp_|Bearer [A-Za-z0-9]{20,}"` 应无命中。
 - 在任何 Coding Agent 里使用时，Key 只放服务端 / 本机环境变量，不要写进代码、提示词或前端。
 - CI 用仓库 Secrets（`${{ secrets.OPENROUTER_API_KEY }}`），不要明文。
 - 一旦 Key 泄露立刻在 <https://openrouter.ai/keys> 吊销并重建。
 
 ## 快速验证
+
+方式一：用脚本（自动解析 Key，推荐）
+
+```bash
+cat > /tmp/jev-request.json <<'JSON'
+{
+  "model": "typesafe/jev-1.14",
+  "state": {"message": "You charged me twice, refund the extra one."},
+  "questions": {
+    "is_refund_request": {
+      "type": "noul",
+      "instructions": "Is the sender requesting a refund?",
+      "criteria": {"true": "Asks for money back.", "false": "Asks something else."}
+    }
+  }
+}
+JSON
+scripts/jev.sh /tmp/jev-request.json
+```
+
+方式二：直接 curl（需要 Key 已在环境变量里）
 
 ```bash
 export OPENROUTER_API_KEY="sk-or-v1-你的key"

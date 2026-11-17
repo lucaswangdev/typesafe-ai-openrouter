@@ -35,3 +35,18 @@
 只改请求路径 + Key（外加必需的模型名与之配套的 20 行说明）即可跑通：官方 skill 的设计指南原样保留，
 所有可验证的声明都在这条端点上实测通过。上游文档里 `api.typesafe.ai`、Python/JS SDK、
 `TypeSafe-Danger-Zone-*` 头不适用于此路径，已在 Live docs 与 Calling it 中标注。
+
+## 追加验证：Key 解析与失败语义（同日）
+
+起因：非交互式 shell 里 `$OPENROUTER_API_KEY` 为空导致 401。rc 文件（`~/.zshrc` / `~/.bashrc`）
+只在对应 shell 的交互式会话中执行，agent 的 `bash -c`、PM2 fork 出的子进程都不会读它们。
+
+| # | 用例 | 期望 | 实测 |
+|---|---|---|---|
+| T12 | 取消环境变量，仅靠 `~/.config/openrouter/key` | 正常返回答案 | 200，`noul` 结构正常，cost $3.46e-05 ✅ |
+| T13 | 环境变量与 key 文件都不存在 | 明确报错、退出码 2 | `error: no API key. Either export OPENROUTER_API_KEY=... or write it to ~/.config/openrouter/key`，exit 2 ✅ |
+| T14 | 环境变量优先于文件（故意给错 key） | 非 0 退出，且不把失败当答案 | `{"error":{"message":"User not found.","code":401}}` 同时 **exit 22** ✅ |
+| T15 | key 文件权限 | 目录 700、文件 600 | `drwx------` / `-rw-------` ✅ |
+
+T14 一开始失败过一次：`curl` 不带 `--fail-with-body` 时 HTTP 4xx 仍返回 0，等于把失败当成功。已修正，
+脚本现在对 HTTP ≥ 400 以非 0 退出并打印响应体，符合 skill 的「失败必须是错误，不能当成某个答案」。
